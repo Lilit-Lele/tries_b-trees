@@ -1,0 +1,8 @@
+gifs/
+.DS_Store
+.claude/
+.ipynb_checkpoints/
+*.ipynb.bak
+__pycache__/
+.venv/
+.env

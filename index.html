@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Insert words into a B-tree and a trie side by side, then step through each lookup with live comparison counters.">
+<title>B-Tree vs Trie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: control bench on top, sticky playback strip, two equal specimen panels side by side, history ledger below */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --sunk: #f6f8fa;
+  --ink: #16202b;
+  --muted: #5a6876;
+  --line: #d9dfe6;
+  --line-strong: #a9b4c0;
+  --bt: #2952c8;
+  --bt-soft: #e3eafc;
+  --tr: #a35f00;
+  --tr-soft: #fbeedb;
+  --ok: #1d8048;
+  --ok-soft: #dcf2e4;
+  --bad: #c0352f;
+  --bad-soft: #fbe2e0;
+  --hl: #ffe59a;
+  --hl-stroke: #d9a800;
+  --passed: #eceff3;
+  --fresh: #d6f0ff;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1319; --surface: #151c24; --sunk: #111820; --ink: #e4ebf2; --muted: #8d9bab;
+    --line: #26313d; --line-strong: #4a5867; --bt: #7ea2ff; --bt-soft: #1c2a4d; --tr: #f2a93b; --tr-soft: #3a2a12;
+    --ok: #46c27c; --ok-soft: #143524; --bad: #ff6f66; --bad-soft: #3f1a18; --hl: #5c4a0e; --hl-stroke: #c9a227;
+    --passed: #1d2630; --fresh: #12364a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #151c24; --sunk: #111820; --ink: #e4ebf2; --muted: #8d9bab;
+  --line: #26313d; --line-strong: #4a5867; --bt: #7ea2ff; --bt-soft: #1c2a4d; --tr: #f2a93b; --tr-soft: #3a2a12;
+  --ok: #46c27c; --ok-soft: #143524; --bad: #ff6f66; --bad-soft: #3f1a18; --hl: #5c4a0e; --hl-stroke: #c9a227;
+  --passed: #1d2630; --fresh: #12364a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 28px 20px 48px; display: grid; gap: 20px; }
+h1, h2 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; }
+h1 .vs { color: var(--muted); font-weight: 500; font-size: 0.6em; vertical-align: 0.25em; padding-inline: 0.15em; }
+h1 .b { color: var(--bt); } h1 .t { color: var(--tr); }
+h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+.eyebrow { margin: 0 0 6px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
+.lede { margin: 10px 0 0; color: var(--muted); max-width: 62ch; }
+.top { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-end; justify-content: space-between; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; color: var(--muted); }
+.stat b { font-family: var(--font-mono); color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* controls */
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.controls form, .opts { display: grid; gap: 6px; align-content: start; min-width: 0; }
+label, .lbl-static { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.field { display: flex; gap: 8px; }
+input[type="text"], select { font: inherit; font-family: var(--font-mono); font-size: 0.95rem; color: var(--ink); background: var(--sunk); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+input[type="text"] { flex: 1; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--bt); outline-offset: 2px; }
+button { font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); white-space: nowrap; }
+button:hover { background: var(--sunk); }
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.primary:hover { opacity: 0.88; background: var(--ink); }
+.hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.opts .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.msg { grid-column: 1 / -1; margin: 0; font-size: 0.88rem; min-height: 1.3em; color: var(--muted); }
+.msg.err { color: var(--bad); }
+
+/* player */
+.player { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 6px 18px -12px rgba(0,0,0,0.35); }
+.pbtns { display: flex; gap: 6px; }
+.pbtns button { padding: 6px 10px; min-width: 40px; font-family: var(--font-mono); }
+.pbtns button:disabled { opacity: 0.4; cursor: default; }
+.ptitle { flex: 1; min-width: 180px; font-size: 0.9rem; color: var(--muted); }
+.ptitle b { font-family: var(--font-mono); color: var(--ink); }
+.ptitle .stepno { font-variant-numeric: tabular-nums; }
+.speed { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--muted); }
+.speed input { width: 120px; accent-color: var(--ink); }
+
+/* panels */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 20px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; display: grid; grid-template-rows: auto auto 1fr auto auto; min-width: 0; overflow: hidden; }
+.panel > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px 10px; border-top: 4px solid var(--accent); }
+.panel.bt { --accent: var(--bt); --accent-soft: var(--bt-soft); }
+.panel.tr { --accent: var(--tr); --accent-soft: var(--tr-soft); }
+.panel h2 { color: var(--accent); }
+.panel .sub { margin: 4px 0 0; font-size: 0.84rem; color: var(--muted); max-width: 44ch; }
+.counter { text-align: right; flex-shrink: 0; }
+.counter .num { display: block; font-family: var(--font-mono); font-size: 2.6rem; font-weight: 600; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.counter .lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }
+.substats { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0 18px 12px; font-size: 0.84rem; color: var(--muted); align-items: center; }
+.substats b { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.verdict { margin-left: auto; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 9px; border-radius: 999px; }
+.verdict.found { background: var(--ok-soft); color: var(--ok); }
+.verdict.miss { background: var(--bad-soft); color: var(--bad); }
+.verdict.run { background: var(--accent-soft); color: var(--accent); }
+.canvas { overflow: auto; height: 400px; background: var(--sunk); border-block: 1px solid var(--line); background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 18px 18px; }
+.canvas svg { display: block; margin: 0 auto; }
+.narr { padding: 12px 18px; min-height: 76px; display: grid; gap: 6px; align-content: start; }
+.narr .say { font-size: 0.92rem; }
+.narr .say.found { color: var(--ok); font-weight: 600; }
+.narr .say.miss { color: var(--bad); font-weight: 600; }
+.narr .idle { color: var(--muted); font-size: 0.9rem; }
+.strip { font-family: var(--font-mono); font-size: 0.95rem; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; }
+.strip .tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-family: var(--font-body); font-weight: 600; }
+.letters { display: flex; flex-wrap: wrap; gap: 2px; }
+.letters span { display: inline-grid; place-items: center; min-width: 1.45em; height: 1.6em; border-radius: 4px; border: 1px solid var(--line); background: var(--sunk); }
+.letters span.m { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.letters span.x { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.letters span.cur { border-color: var(--accent); border-width: 2px; }
+.log { list-style: none; margin: 0; padding: 0 18px 16px; max-height: 150px; overflow: auto; font-size: 0.82rem; display: grid; gap: 2px; counter-reset: s; }
+.log li { counter-increment: s; display: grid; grid-template-columns: 2.2em 1fr 3.4em; gap: 6px; color: var(--muted); padding: 2px 6px; border-radius: 4px; }
+.log li::before { content: counter(s); font-family: var(--font-mono); font-size: 0.75rem; color: var(--line-strong); font-variant-numeric: tabular-nums; }
+.log li .c { font-family: var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; font-size: 0.75rem; }
+.log li.now { background: var(--accent-soft); color: var(--ink); }
+
+/* svg */
+svg text { font-family: var(--font-mono); font-size: 13px; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+svg .small { font-size: 9.5px; fill: var(--muted); }
+svg .empty { font-family: var(--font-body); font-size: 14px; fill: var(--muted); }
+.edge { fill: none; stroke: var(--line-strong); stroke-width: 1.3; }
+.ptr { fill: var(--line-strong); }
+.bnode .frame { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.3; }
+.bnode .div { stroke: var(--line); stroke-width: 1; }
+.cell .chip { fill: transparent; stroke: none; }
+.cell.passed .chip { fill: var(--passed); }
+.cell.passed text { fill: var(--muted); }
+.cell.cmp .chip { fill: var(--hl); stroke: var(--hl-stroke); stroke-width: 1.2; }
+.cell.eq .chip { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+.cell.eq text { fill: var(--ok); font-weight: 600; }
+.cell.fresh .chip { fill: var(--fresh); }
+.bt .edge.on { stroke: var(--bt); stroke-width: 2.6; }
+.bt .bnode.onpath .frame { stroke: var(--bt); stroke-width: 1.8; }
+.bt .bnode.current .frame { stroke: var(--bt); stroke-width: 2.8; fill: var(--bt-soft); }
+.bt .bnode.found .frame { stroke: var(--ok); fill: var(--ok-soft); }
+.bt .bnode.miss .frame { stroke: var(--bad); fill: var(--bad-soft); }
+.tnode .disc { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.3; }
+.tnode .ring { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.tnode.fresh .disc { fill: var(--fresh); }
+.tr .edge.on { stroke: var(--tr); stroke-width: 2.6; }
+.tr .tnode.onpath .disc { stroke: var(--tr); stroke-width: 1.8; }
+.tr .tnode.current .disc { stroke: var(--tr); stroke-width: 2.8; fill: var(--tr-soft); }
+.tr .tnode.found .disc { stroke: var(--ok); fill: var(--ok-soft); }
+.tr .tnode.found .ring { stroke: var(--ok); }
+.tr .tnode.miss .disc { stroke: var(--bad); fill: var(--bad-soft); }
+.edge, .frame, .chip, .disc, .ring { transition: fill .25s, stroke .25s, stroke-width .25s; }
+@media (prefers-reduced-motion: reduce) { .edge, .frame, .chip, .disc, .ring { transition: none; } }
+
+/* history */
+.history, .notes { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+.history h2, .notes h2 { font-size: 1.1rem; margin-bottom: 10px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; min-width: 640px; }
+th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+th.grp-b { color: var(--bt); } th.grp-t { color: var(--tr); }
+td:first-child, th:first-child { text-align: left; }
+td { font-family: var(--font-mono); }
+td.win { font-weight: 600; color: var(--ok); }
+td .res { font-family: var(--font-body); font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+td .res.found { background: var(--ok-soft); color: var(--ok); }
+td .res.miss { background: var(--bad-soft); color: var(--bad); }
+td button { font-size: 0.78rem; padding: 3px 8px; }
+.emptyrow td { text-align: left; color: var(--muted); font-family: var(--font-body); }
+.notes ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; color: var(--muted); font-size: 0.88rem; max-width: 90ch; }
+.notes b { color: var(--ink); font-weight: 600; }
+@media (max-width: 560px) {
+  .wrap { padding: 20px 16px 40px; }
+  .counter .num { font-size: 2rem; }
+  .canvas { height: 320px; }
+  .speed input { width: 90px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Search structures, side by side</p>
+      <h1><span class="b">B-tree</span><span class="vs">vs</span><span class="t">Trie</span></h1>
+      <p class="lede">Insert words into both structures, then look one up and watch each search step by step. The counters show how much comparing each structure does to reach an answer.</p>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section class="controls" aria-label="Controls">
+    <form id="insForm" autocomplete="off">
+      <label for="insInput">Insert words</label>
+      <div class="field"><input type="text" id="insInput" placeholder="card carbon cast" spellcheck="false"><button type="submit">Insert</button></div>
+      <p class="hint">Separate several words with spaces or commas. Letters and digits only.</p>
+    </form>
+    <form id="findForm" autocomplete="off">
+      <label for="findInput">Look up a word</label>
+      <div class="field"><input type="text" id="findInput" placeholder="cart" spellcheck="false"><button type="submit" class="primary">Look up</button></div>
+      <p class="hint">Both searches run together. Try a prefix like <b>ca</b> or a missing word.</p>
+    </form>
+    <div class="opts">
+      <label for="degree">B-tree minimum degree</label>
+      <div class="row">
+        <select id="degree">
+          <option value="2">t = 2 · up to 3 keys per node</option>
+          <option value="3">t = 3 · up to 5 keys per node</option>
+          <option value="4">t = 4 · up to 7 keys per node</option>
+          <option value="5">t = 5 · up to 9 keys per node</option>
+        </select>
+      </div>
+      <div class="row">
+        <button type="button" id="sampleBtn">Load sample words</button>
+        <button type="button" id="clearBtn">Clear all</button>
+      </div>
+    </div>
+    <p class="msg" id="msg" role="status"></p>
+  </section>
+
+  <section class="player" aria-label="Playback">
+    <div class="pbtns">
+      <button type="button" id="pFirst" title="Back to first step" aria-label="First step">|◀</button>
+      <button type="button" id="pPrev" title="Previous step" aria-label="Previous step">◀</button>
+      <button type="button" id="pPlay" title="Play or pause" aria-label="Play">▶</button>
+      <button type="button" id="pNext" title="Next step" aria-label="Next step">▶|</button>
+      <button type="button" id="pLast" title="Jump to result" aria-label="Last step">▶▶|</button>
+    </div>
+    <div class="ptitle" id="ptitle">No lookup yet. Type a word above and press <b>Look up</b>.</div>
+    <div class="speed"><label for="speed" style="text-transform:none;letter-spacing:0;font-weight:500">Speed</label><input type="range" id="speed" min="0" max="100" value="55"></div>
+  </section>
+
+  <div class="panels">
+    <article class="panel bt">
+      <header>
+        <div>
+          <h2>B-tree</h2>
+          <p class="sub">Words stay sorted inside each node. Search scans a node left to right, comparing whole words, then drops into the right child.</p>
+        </div>
+        <div class="counter"><span class="num" id="btCount">0</span><span class="lbl">word comparisons</span></div>
+      </header>
+      <div class="substats">
+        <span>Character checks <b id="btChars">0</b></span>
+        <span>Nodes visited <b id="btNodes">0</b></span>
+        <span class="verdict" id="btVerdict" hidden></span>
+      </div>
+      <div class="canvas" id="btCanvas"></div>
+      <div class="narr" id="btNarr"></div>
+      <ol class="log" id="btLog"></ol>
+    </article>
+
+    <article class="panel tr">
+      <header>
+        <div>
+          <h2>Trie</h2>
+          <p class="sub">One node per letter. Search reads the word a letter at a time and follows the matching branch. A double ring marks the end of a stored word.</p>
+        </div>
+        <div class="counter"><span class="num" id="trCount">0</span><span class="lbl">character checks</span></div>
+      </header>
+      <div class="substats">
+        <span>Letters matched <b id="trMatched">0</b></span>
+        <span>Nodes visited <b id="trNodes">0</b></span>
+        <span class="verdict" id="trVerdict" hidden></span>
+      </div>
+      <div class="canvas" id="trCanvas"></div>
+      <div class="narr" id="trNarr"></div>
+      <ol class="log" id="trLog"></ol>
+    </article>
+  </div>
+
+  <section class="history" aria-label="Lookup history">
+    <h2>Lookup history</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Word</th><th>Result</th>
+            <th class="grp-b">B-tree word cmp</th><th class="grp-b">B-tree char checks</th><th class="grp-b">B-tree nodes</th>
+            <th class="grp-t">Trie char checks</th><th class="grp-t">Trie nodes</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="histBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="notes" aria-label="How counting works">
+    <h2>How the counters work</h2>
+    <ul>
+      <li><b>B-tree word comparisons</b> count each time the search word is compared against a key in a node. Nodes are scanned left to right, stopping at the first key that is equal or larger.</li>
+      <li><b>B-tree character checks</b> count the letters examined inside those word comparisons. Comparing <b>cart</b> with <b>care</b> checks 4 letters before the difference shows up.</li>
+      <li><b>Trie character checks</b> count one check per letter of the search word, since each node finds its child by letter directly. The final end-of-word flag test is not counted.</li>
+      <li>Green in the history table marks the lower of the two character-check totals for each lookup. Changing the B-tree degree rebuilds it from the same words, in the same insertion order.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const SAMPLE = 'car cart care cat do dog dot door apple app ape bat bath ball tea ten tent zoo'.split(' ');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const q = s => `<b>${esc(s)}</b>`;
+  let uid = 0;
+
+  function cmpWords(a, b) {
+    let i = 0, chars = 0;
+    while (i < a.length && i < b.length) {
+      chars++;
+      if (a[i] !== b[i]) return { sign: a[i] < b[i] ? -1 : 1, chars };
+      i++;
+    }
+    return { sign: Math.sign(a.length - b.length), chars };
+  }
+
+  class BTree {
+    constructor(t) { this.t = t; this.root = this.node(true); }
+    node(leaf) { return { id: 'b' + (++uid), keys: [], children: [], leaf }; }
+    find(k) {
+      let x = this.root;
+      while (x) {
+        let i = 0;
+        while (i < x.keys.length && k > x.keys[i]) i++;
+        if (i < x.keys.length && x.keys[i] === k) return x;
+        if (x.leaf) return null;
+        x = x.children[i];
+      }
+      return null;
+    }
+    insert(k) {
+      if (this.find(k)) return false;
+      const r = this.root, t = this.t;
+      if (r.keys.length === 2 * t - 1) {
+        const s = this.node(false);
+        s.children.push(r);
+        this.root = s;
+        this.split(s, 0);
+        this.insertNonFull(s, k);
+      } else this.insertNonFull(r, k);
+      return true;
+    }
+    split(x, i) {
+      const t = this.t, y = x.children[i], z = this.node(y.leaf);
+      const mid = y.keys[t - 1];
+      z.keys = y.keys.slice(t);
+      if (!y.leaf) { z.children = y.children.slice(t); y.children = y.children.slice(0, t); }
+      y.keys = y.keys.slice(0, t - 1);
+      x.keys.splice(i, 0, mid);
+      x.children.splice(i + 1, 0, z);
+    }
+    insertNonFull(x, k) {
+      for (;;) {
+        let i = 0;
+        while (i < x.keys.length && k > x.keys[i]) i++;
+        if (x.leaf) { x.keys.splice(i, 0, k); return; }
+        if (x.children[i].keys.length === 2 * this.t - 1) {
+          this.split(x, i);
+          if (k > x.keys[i]) i++;
+        }
+        x = x.children[i];
+      }
+    }
+    stats() {
+      let nodes = 0, height = 0;
+      const walk = (x, d) => { nodes++; height = Math.max(height, d); x.children.forEach(c => walk(c, d + 1)); };
+      walk(this.root, 1);
+      return { nodes, height };
+    }
+    search(word) {
+      const steps = [];
+      let kc = 0, cc = 0, nv = 0, x = this.root;
+      const path = [];
+      if (!x.keys.length) {
+        steps.push({ desc: 'The tree is empty, so there is nothing to compare.', result: 'miss', kc, cc, nv, path: [] });
+        return steps;
+      }
+      let via = 'Start at the root';
+      for (;;) {
+        nv++; path.push(x.id);
+        steps.push({ node: x.id, key: null, path: [...path], kc, cc, nv,
+          desc: `${via}: node [${x.keys.map(esc).join(', ')}]` });
+        let i = 0;
+        for (; i < x.keys.length; i++) {
+          const k = x.keys[i];
+          const r = cmpWords(word, k);
+          kc++; cc += r.chars;
+          const base = { node: x.id, key: i, path: [...path], kc, cc, nv, a: word, b: k, chars: r.chars, sign: r.sign };
+          if (r.sign === 0) {
+            steps.push({ ...base, result: 'found', desc: `${q(word)} = ${q(k)}, found it.` });
+            return steps;
+          }
+          if (r.sign < 0) {
+            steps.push({ ...base, desc: `${q(word)} &lt; ${q(k)}, so it can only be to the left of this key.` });
+            break;
+          }
+          steps.push({ ...base, desc: `${q(word)} &gt; ${q(k)}, keep scanning right.` });
+        }
+        if (x.leaf) {
+          steps.push({ node: x.id, key: null, path: [...path], kc, cc, nv, result: 'miss',
+            desc: `This is a leaf with no child to follow, so ${q(word)} is not in the tree.` });
+          return steps;
+        }
+        via = `Follow child pointer ${i + 1} of ${x.children.length}`;
+        x = x.children[i];
+      }
+    }
+  }
+
+  class Trie {
+    constructor() { this.root = this.node(''); this.count = 1; }
+    node(ch) { return { id: 't' + (++uid), ch, children: new Map(), end: false }; }
+    insert(w) {
+      let x = this.root;
+      const path = [x.id];
+      for (const c of w) {
+        if (!x.children.has(c)) { x.children.set(c, this.node(c)); this.count++; }
+        x = x.children.get(c);
+        path.push(x.id);
+      }
+      x.end = true;
+      return path;
+    }
+    search(word) {
+      const steps = [];
+      let x = this.root, tc = 0, nv = 1;
+      const path = [x.id];
+      steps.push({ node: x.id, path: [...path], tc, nv, done: 0, desc: 'Start at the root.' });
+      for (let i = 0; i < word.length; i++) {
+        const c = word[i];
+        tc++;
+        const child = x.children.get(c);
+        if (!child) {
+          steps.push({ node: x.id, path: [...path], tc, nv, done: i, missAt: i, result: 'miss',
+            desc: `No branch for ${q(c)} here, so ${q(word)} is not stored.` });
+          return steps;
+        }
+        x = child; nv++; path.push(x.id);
+        steps.push({ node: x.id, path: [...path], tc, nv, done: i + 1,
+          desc: `Letter ${i + 1} is ${q(c)}, follow that branch.` });
+      }
+      if (x.end) {
+        steps.push({ node: x.id, path: [...path], tc, nv, done: word.length, result: 'found',
+          desc: `All letters matched and this node marks the end of a word: found ${q(word)}.` });
+      } else {
+        steps.push({ node: x.id, path: [...path], tc, nv, done: word.length, result: 'miss',
+          desc: `All letters matched, but no word ends here. ${q(word)} is only a prefix of stored words.` });
+      }
+      return steps;
+    }
+  }
+
+  /* ---------- state ---------- */
+  const state = { words: [], t: 2 };
+  let bt, trie;
+  const play = { b: null, t: null, k: 0, max: 0, word: '', timer: null };
+  let fresh = { bt: new Map(), tr: new Set() }, freshTimer = null;
+  const history = [];
+  let posBT = {}, posTR = {};
+
+  function rebuild() {
+    bt = new BTree(state.t); trie = new Trie();
+    state.words.forEach(w => { bt.insert(w); trie.insert(w); });
+  }
+
+  /* ---------- layout + drawing ---------- */
+  const CH = 7.8, KH = 30, BLV = 72, BGAP = 16, PAD = 26;
+  const keyW = k => Math.max(36, Math.ceil(k.length * CH) + 18);
+
+  function drawBT() {
+    const root = bt.root, nodes = [];
+    const measure = x => {
+      x._w = x.keys.reduce((s, k) => s + keyW(k), 0) || 60;
+      if (x.leaf) return (x._sw = x._w);
+      let sum = 0;
+      x.children.forEach(c => { sum += measure(c); });
+      sum += BGAP * (x.children.length - 1);
+      x._cw = sum;
+      return (x._sw = Math.max(x._w, sum));
+    };
+    let maxDepth = 0;
+    const place = (x, left, d) => {
+      maxDepth = Math.max(maxDepth, d);
+      x._x = left + x._sw / 2 - x._w / 2; x._y = PAD + d * BLV;
+      nodes.push(x);
+      if (!x.leaf) {
+        let cl = left + (x._sw - x._cw) / 2;
+        x.children.forEach(c => { place(c, cl, d + 1); cl += c._sw + BGAP; });
+      }
+    };
+    measure(root); place(root, PAD, 0);
+    const W = root._sw + PAD * 2, H = PAD * 2 + maxDepth * BLV + KH;
+    posBT = {};
+    let edges = '', ptrs = '', body = '';
+    nodes.forEach(x => {
+      posBT[x.id] = { x: x._x, y: x._y, w: x._w };
+      if (!x.leaf) {
+        let off = 0;
+        x.children.forEach((c, i) => {
+          const x1 = x._x + off, y1 = x._y + KH, x2 = c._x + c._w / 2, y2 = c._y;
+          edges += `<path class="edge" data-to="${c.id}" d="M${x1},${y1} C${x1},${y1 + BLV * 0.5} ${x2},${y2 - BLV * 0.5} ${x2},${y2}"/>`;
+          ptrs += `<circle class="ptr" cx="${x1}" cy="${y1}" r="2.6"/>`;
+          if (i < x.keys.length) off += keyW(x.keys[i]);
+        });
+      }
+      let cells = '', divs = '', off = 0;
+      if (!x.keys.length) cells = `<text class="empty" x="${x._w / 2}" y="${KH / 2}">empty</text>`;
+      x.keys.forEach((k, i) => {
+        const w = keyW(k);
+        cells += `<g class="cell" data-k="${i}"><rect class="chip" x="${off + 3}" y="3" width="${w - 6}" height="${KH - 6}" rx="4"/><text x="${off + w / 2}" y="${KH / 2 + 0.5}">${esc(k)}</text></g>`;
+        if (i > 0) divs += `<line class="div" x1="${off}" y1="5" x2="${off}" y2="${KH - 5}"/>`;
+        off += w;
+      });
+      body += `<g class="bnode" data-id="${x.id}" transform="translate(${x._x},${x._y})"><rect class="frame" width="${x._w}" height="${KH}" rx="6"/>${divs}${cells}</g>`;
+    });
+    $('#btCanvas').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="B-tree diagram">${edges}${body}${ptrs}</svg>`;
+  }
+
+  const R = 15, TLV = 60, SLOT = 36;
+  function drawTR() {
+    const root = trie.root, nodes = [];
+    let maxDepth = 0, cursor = PAD;
+    const place = (x, d) => {
+      maxDepth = Math.max(maxDepth, d);
+      const kids = [...x.children.values()].sort((a, b) => (a.ch < b.ch ? -1 : 1));
+      x._kids = kids;
+      if (!kids.length) { x._cx = cursor + SLOT / 2; cursor += SLOT; }
+      else { kids.forEach(c => place(c, d + 1)); x._cx = (kids[0]._cx + kids[kids.length - 1]._cx) / 2; }
+      x._cy = PAD + R + d * TLV;
+      nodes.push(x);
+    };
+    place(root, 0);
+    const W = Math.max(cursor + PAD, 2 * PAD + SLOT), H = PAD * 2 + R * 2 + maxDepth * TLV;
+    posTR = {};
+    let edges = '', body = '';
+    nodes.forEach(x => {
+      posTR[x.id] = { x: x._cx, y: x._cy };
+      x._kids.forEach(c => {
+        edges += `<line class="edge" data-to="${c.id}" x1="${x._cx}" y1="${x._cy + R}" x2="${c._cx}" y2="${c._cy - R}"/>`;
+      });
+      const label = x === root ? `<text class="small" x="0" y="0.5">root</text>` : `<text x="0" y="0.5">${esc(x.ch)}</text>`;
+      const ring = x.end ? `<circle class="ring" r="${R - 4}"/>` : '';
+      body += `<g class="tnode" data-id="${x.id}" transform="translate(${x._cx},${x._cy})"><circle class="disc" r="${R}"/>${ring}${label}</g>`;
+    });
+    $('#trCanvas').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Trie diagram">${edges}${body}</svg>`;
+  }
+
+  function drawAll() { drawBT(); drawTR(); renderStats(); }
+
+  function renderStats() {
+    const s = bt.stats();
+    $('#stats').innerHTML =
+      `<span class="stat">Words <b>${state.words.length}</b></span>` +
+      `<span class="stat">B-tree <b>${s.nodes}</b> nodes · height <b>${s.height}</b></span>` +
+      `<span class="stat">Trie <b>${trie.count}</b> nodes</span>`;
+  }
+
+  /* ---------- applying a step ---------- */
+  const at = (arr, k) => (arr ? arr[Math.min(k, arr.length - 1)] : null);
+
+  function letters(word, cls) {
+    return `<span class="letters">${[...word].map((c, i) => `<span class="${cls(i)}">${esc(c)}</span>`).join('')}</span>`;
+  }
+
+  function scrollTo(container, x, y) {
+    const cw = container.clientWidth, chh = container.clientHeight;
+    const L = container.scrollLeft, T = container.scrollTop;
+    const margin = 50;
+    if (x < L + margin || x > L + cw - margin || y < T + margin || y > T + chh - margin) {
+      const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+      container.scrollTo({ left: x - cw / 2, top: y - chh / 3, behavior: smooth ? 'smooth' : 'auto' });
+    }
+  }
+
+  function setVerdict(el, step, last) {
+    if (!step) { el.hidden = true; return; }
+    el.hidden = false;
+    if (last && step.result) { el.className = 'verdict ' + step.result; el.textContent = step.result === 'found' ? 'Found' : 'Not found'; }
+    else { el.className = 'verdict run'; el.textContent = 'Searching'; }
+  }
+
+  function renderLog(el, steps, k, countKey) {
+    if (!steps) { el.innerHTML = ''; return; }
+    const upto = Math.min(k, steps.length - 1);
+    el.innerHTML = steps.slice(0, upto + 1).map((s, i) =>
+      `<li class="${i === upto ? 'now' : ''}"><span>${s.desc}</span><span class="c">${s[countKey]} cmp</span></li>`).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function applyStep() {
+    const k = play.k;
+    const bs = at(play.b, k), ts = at(play.t, k);
+    const bLast = play.b && k >= play.b.length - 1, tLast = play.t && k >= play.t.length - 1;
+
+    // B-tree
+    const bc = $('#btCanvas');
+    const bPath = new Set(bs ? bs.path : []);
+    bc.querySelectorAll('.bnode').forEach(g => {
+      const id = g.dataset.id;
+      const cur = bs && bs.node === id;
+      g.classList.toggle('onpath', bPath.has(id));
+      g.classList.toggle('current', !!cur);
+      g.classList.toggle('found', !!(cur && bLast && bs.result === 'found'));
+      g.classList.toggle('miss', !!(cur && bLast && bs.result === 'miss'));
+      const fk = fresh.bt.get(id);
+      g.querySelectorAll('.cell').forEach(c => {
+        const i = +c.dataset.k;
+        const isCmp = cur && bs.key === i;
+        c.classList.toggle('cmp', !!(isCmp && bs.sign !== 0));
+        c.classList.toggle('eq', !!(isCmp && bs.sign === 0));
+        c.classList.toggle('passed', !!(cur && bs.key != null && i < bs.key));
+        c.classList.toggle('fresh', !!(fk && fk.has(c.textContent)));
+      });
+    });
+    bc.querySelectorAll('.edge').forEach(e => e.classList.toggle('on', bPath.has(e.dataset.to)));
+    if (bs && bs.node && posBT[bs.node]) {
+      const p = posBT[bs.node];
+      let xoff = p.w / 2;
+      if (bs.key != null) {
+        const node = findBTNode(bs.node);
+        if (node) { xoff = 0; for (let i = 0; i < bs.key; i++) xoff += keyW(node.keys[i]); xoff += keyW(node.keys[bs.key]) / 2; }
+      }
+      scrollTo(bc, p.x + xoff, p.y);
+    }
+    $('#btCount').textContent = bs ? bs.kc : 0;
+    $('#btChars').textContent = bs ? bs.cc : 0;
+    $('#btNodes').textContent = bs ? bs.nv : 0;
+    setVerdict($('#btVerdict'), bs, bLast);
+    let bn = '';
+    if (bs) {
+      bn = `<div class="say ${bLast && bs.result ? bs.result : ''}">${bs.desc}</div>`;
+      if (bs.key != null) {
+        const mism = bs.chars > 0 && bs.a[bs.chars - 1] !== bs.b[bs.chars - 1];
+        const cls = i => (i < bs.chars ? (mism && i === bs.chars - 1 ? 'x' : 'm') : '');
+        bn += `<div class="strip"><span class="tag">word</span>${letters(bs.a, cls)}<span class="tag">key</span>${letters(bs.b, cls)}</div>`;
+      }
+    } else bn = `<div class="idle">Look up a word to watch the B-tree search.</div>`;
+    $('#btNarr').innerHTML = bn;
+    renderLog($('#btLog'), play.b, k, 'kc');
+
+    // Trie
+    const tcv = $('#trCanvas');
+    const tPath = new Set(ts ? ts.path : []);
+    tcv.querySelectorAll('.tnode').forEach(g => {
+      const id = g.dataset.id;
+      const cur = ts && ts.node === id;
+      g.classList.toggle('onpath', tPath.has(id));
+      g.classList.toggle('current', !!cur);
+      g.classList.toggle('found', !!(cur && tLast && ts.result === 'found'));
+      g.classList.toggle('miss', !!(cur && tLast && ts.result === 'miss'));
+      g.classList.toggle('fresh', fresh.tr.has(id));
+    });
+    tcv.querySelectorAll('.edge').forEach(e => e.classList.toggle('on', tPath.has(e.dataset.to)));
+    if (ts && posTR[ts.node]) scrollTo(tcv, posTR[ts.node].x, posTR[ts.node].y);
+    $('#trCount').textContent = ts ? ts.tc : 0;
+    $('#trMatched').textContent = ts ? ts.done : 0;
+    $('#trNodes').textContent = ts ? ts.nv : 0;
+    setVerdict($('#trVerdict'), ts, tLast);
+    let tn = '';
+    if (ts) {
+      tn = `<div class="say ${tLast && ts.result ? ts.result : ''}">${ts.desc}</div>`;
+      const cls = i => {
+        if (ts.missAt === i) return 'x';
+        if (i < ts.done) return 'm' + (i === ts.done - 1 && !tLast ? ' cur' : '');
+        return '';
+      };
+      tn += `<div class="strip"><span class="tag">word</span>${letters(play.word, cls)}</div>`;
+    } else tn = `<div class="idle">Look up a word to watch the trie search.</div>`;
+    $('#trNarr').innerHTML = tn;
+    renderLog($('#trLog'), play.t, k, 'tc');
+
+    // player
+    const has = !!play.b;
+    $('#pFirst').disabled = $('#pPrev').disabled = !has || k === 0;
+    $('#pNext').disabled = $('#pLast').disabled = !has || k >= play.max;
+    $('#pPlay').disabled = !has;
+    $('#ptitle').innerHTML = has
+      ? `Looking up <b>${esc(play.word)}</b> · <span class="stepno">step ${k + 1} of ${play.max + 1}</span>`
+      : 'No lookup yet. Type a word above and press <b>Look up</b>.';
+  }
+
+  function findBTNode(id) {
+    const stack = [bt.root];
+    while (stack.length) { const x = stack.pop(); if (x.id === id) return x; stack.push(...x.children); }
+    return null;
+  }
+
+  /* ---------- playback ---------- */
+  const interval = () => Math.round(1400 - (+$('#speed').value) * 12.5);
+  function setPlaying(on) {
+    clearInterval(play.timer); play.timer = null;
+    if (on && play.b) {
+      if (play.k >= play.max) { play.k = 0; applyStep(); }
+      play.timer = setInterval(() => {
+        if (play.k >= play.max) { setPlaying(false); return; }
+        play.k++; applyStep();
+        if (play.k >= play.max) setPlaying(false);
+      }, interval());
+    }
+    const b = $('#pPlay');
+    b.textContent = play.timer ? '❚❚' : '▶';
+    b.setAttribute('aria-label', play.timer ? 'Pause' : 'Play');
+  }
+  const go = k => { setPlaying(false); play.k = Math.max(0, Math.min(play.max, k)); applyStep(); };
+  $('#pFirst').onclick = () => go(0);
+  $('#pPrev').onclick = () => go(play.k - 1);
+  $('#pNext').onclick = () => go(play.k + 1);
+  $('#pLast').onclick = () => go(play.max);
+  $('#pPlay').onclick = () => setPlaying(!play.timer);
+  $('#speed').oninput = () => { if (play.timer) setPlaying(true); };
+
+  function lookup(word, { autoplay = true, record = true } = {}) {
+    setPlaying(false);
+    play.b = bt.search(word); play.t = trie.search(word);
+    play.word = word; play.k = 0;
+    play.max = Math.max(play.b.length, play.t.length) - 1;
+    if (record) {
+      const b = play.b[play.b.length - 1], t = play.t[play.t.length - 1];
+      history.unshift({ word, result: t.result, kc: b.kc, cc: b.cc, bn: b.nv, tc: t.tc, tn: t.nv, t: state.t });
+      renderHistory();
+    }
+    if (autoplay) { applyStep(); setPlaying(true); }
+    else { play.k = play.max; applyStep(); }
+  }
+
+  function clearPlay() {
+    setPlaying(false);
+    play.b = play.t = null; play.k = 0; play.max = 0; play.word = '';
+  }
+
+  function renderHistory() {
+    const body = $('#histBody');
+    if (!history.length) { body.innerHTML = `<tr class="emptyrow"><td colspan="8">Lookups you run appear here so you can compare the counts.</td></tr>`; return; }
+    body.innerHTML = history.slice(0, 40).map((h, i) => {
+      const bw = h.cc < h.tc, tw = h.tc < h.cc;
+      return `<tr><td>${esc(h.word)}</td><td><span class="res ${h.result}">${h.result === 'found' ? 'Found' : 'Not found'}</span></td>` +
+        `<td>${h.kc}</td><td class="${bw ? 'win' : ''}">${h.cc}</td><td>${h.bn}</td>` +
+        `<td class="${tw ? 'win' : ''}">${h.tc}</td><td>${h.tn}</td>` +
+        `<td><button type="button" data-replay="${i}">Replay</button></td></tr>`;
+    }).join('');
+  }
+  $('#histBody').addEventListener('click', e => {
+    const b = e.target.closest('[data-replay]');
+    if (!b) return;
+    lookup(history[+b.dataset.replay].word, { record: false });
+  });
+
+  /* ---------- input handling ---------- */
+  function say(text, err) { const m = $('#msg'); m.textContent = text; m.classList.toggle('err', !!err); }
+  function parseWords(raw) {
+    const parts = raw.toLowerCase().split(/[\s,;]+/).filter(Boolean);
+    const ok = [], bad = [];
+    parts.forEach(p => (/^[a-z0-9]+$/.test(p) ? ok : bad).push(p));
+    return { ok, bad };
+  }
+
+  $('#insForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const { ok, bad } = parseWords($('#insInput').value);
+    if (!ok.length && !bad.length) { say('Type at least one word to insert.', true); return; }
+    clearPlay();
+    const added = [], dup = [];
+    fresh = { bt: new Map(), tr: new Set() };
+    ok.forEach(w => {
+      if (state.words.includes(w)) { dup.push(w); return; }
+      state.words.push(w); bt.insert(w);
+      trie.insert(w);
+      added.push(w);
+    });
+    drawAll();
+    added.forEach(w => {
+      const n = bt.find(w);
+      if (n) { if (!fresh.bt.has(n.id)) fresh.bt.set(n.id, new Set()); fresh.bt.get(n.id).add(w); }
+      let x = trie.root; fresh.tr.add(x.id);
+      for (const c of w) { x = x.children.get(c); fresh.tr.add(x.id); }
+    });
+    applyStep();
+    clearTimeout(freshTimer);
+    freshTimer = setTimeout(() => { fresh = { bt: new Map(), tr: new Set() }; applyStep(); }, 1800);
+    const parts = [];
+    if (added.length) parts.push(`Inserted ${added.length} word${added.length > 1 ? 's' : ''}: ${added.join(', ')}.`);
+    if (dup.length) parts.push(`Already stored: ${dup.join(', ')}.`);
+    if (bad.length) parts.push(`Skipped ${bad.join(', ')} (letters and digits only).`);
+    say(parts.join(' '), !added.length);
+    if (added.length) $('#insInput').value = '';
+  });
+
+  $('#findForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const { ok, bad } = parseWords($('#findInput').value);
+    if (ok.length !== 1 || bad.length) { say('Look up one word at a time, using letters and digits only.', true); return; }
+    say('');
+    lookup(ok[0]);
+  });
+
+  $('#degree').addEventListener('change', e => {
+    state.t = +e.target.value;
+    const w = play.word;
+    clearPlay(); rebuild(); drawAll();
+    if (w) lookup(w, { autoplay: false, record: false }); else applyStep();
+    say(`Rebuilt the B-tree with t = ${state.t}. The trie does not change.`);
+  });
+  $('#sampleBtn').onclick = () => {
+    clearPlay(); state.words = [...SAMPLE]; rebuild(); drawAll(); applyStep();
+    say(`Loaded ${SAMPLE.length} sample words.`);
+  };
+  $('#clearBtn').onclick = () => {
+    clearPlay(); state.words = []; rebuild(); drawAll(); applyStep();
+    say('Cleared both structures. Insert some words to start again.');
+  };
+
+  /* ---------- boot ---------- */
+  function start(data) {
+    data = data || {};
+    state.words = Array.isArray(data.words) ? data.words : [...SAMPLE];
+    state.t = data.t || 2;
+    if (Array.isArray(data.history)) history.push(...data.history);
+    $('#degree').value = String(state.t);
+    rebuild(); drawAll(); renderHistory();
+    if (data.word) lookup(data.word, { autoplay: false, record: false });
+    else if (!Array.isArray(data.words)) { lookup('cart', { autoplay: false }); $('#findInput').value = 'cart'; }
+    else applyStep();
+  }
+  start({});
+})();
+</script>
+</body>
+</html>
